@@ -3,161 +3,150 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pro Flappy Bird - Auto Mode</title>
+    <title>Pro Flappy - Ultra Edition</title>
     <style>
-        body { margin: 0; padding: 0; background: #222; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: manipulation; }
-        canvas { background: #4ec0ca; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 100%; max-height: 80vh; }
-        .controls { margin-top: 15px; display: flex; gap: 10px; }
-        button { padding: 12px 24px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; transition: 0.3s; font-weight: bold; }
-        .btn-auto { background: #e67e22; color: white; }
-        .btn-auto.active { background: #27ae60; box-shadow: 0 0 15px #2ecc71; }
-        .stats { color: white; margin-bottom: 10px; font-size: 18px; }
+        body { margin: 0; background: #1a1a1a; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: 'Arial', sans-serif; overflow: hidden; touch-action: none; }
+        canvas { background: linear-gradient(#4ec0ca, #a4e4e9); border-radius: 15px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); max-width: 95vw; max-height: 75vh; cursor: pointer; }
+        .ui-panel { margin-bottom: 15px; display: flex; gap: 20px; align-items: center; color: white; }
+        .btn-auto { padding: 10px 20px; border: 2px solid #fff; background: transparent; color: white; border-radius: 25px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-auto.on { background: #2ecc71; border-color: #2ecc71; box-shadow: 0 0 15px #2ecc71; }
+        .score-board { font-size: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
 
-<div class="stats">En Yüksek Skor: <span id="highScore">0</span></div>
-<canvas id="gameCanvas" width="360" height="580"></canvas>
-
-<div class="controls">
-    <button id="autoBtn" class="btn-auto">OTOMATİK MOD: KAPALI</button>
+<div class="ui-panel">
+    <div class="score-board">🏆 Rekor: <span id="best">0</span></div>
+    <button id="autoBtn" class="btn-auto">OTOMATİK: KAPALI</button>
 </div>
 
+<canvas id="cvs" width="360" height="580"></canvas>
+
 <script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const highScoreEl = document.getElementById('highScore');
+const cvs = document.getElementById('cvs');
+const ctx = cvs.getContext('2d');
+const bestEl = document.getElementById('best');
 const autoBtn = document.getElementById('autoBtn');
 
-// Ayarlar
-let gravity = 0.25;
-let jump = -4.5;
-let pipeSpeed = 2.5;
-let gap = 160;
+// Ayarlar & State
+let gravity = 0.22, jump = -4.6, pipeSpeed = 2.8, gap = 155;
+let bird = { x: 60, y: 290, v: 0, r: 14 };
+let pipes = [], score = 0, frame = 0;
+let isAuto = false, gameState = 'READY'; // READY, PLAYING, OVER
 
-// Oyun Durumu
-let bird = { x: 50, y: 250, velocity: 0, radius: 15 };
-let pipes = [];
-let score = 0;
-let highScore = localStorage.getItem('flappyHighScore') || 0;
-let isAuto = false;
-let gameRunning = true;
-let frame = 0;
+let best = localStorage.getItem('fb_best') || 0;
+bestEl.innerText = best;
 
-highScoreEl.innerText = highScore;
+// Kontroller
+const trigger = () => {
+    if (gameState === 'READY') gameState = 'PLAYING';
+    else if (gameState === 'OVER') reset();
+    else if (!isAuto) bird.v = jump;
+};
 
-// Girdiler
-const doJump = () => { if(gameRunning && !isAuto) bird.velocity = jump; if(!gameRunning) reset(); };
-window.addEventListener('keydown', (e) => { if(e.code === 'Space') doJump(); });
-canvas.addEventListener('touchstart', (e) => { e.preventDefault(); doJump(); });
-
-autoBtn.addEventListener('click', () => {
+window.addEventListener('keydown', e => { if(e.code === 'Space' || e.code === 'ArrowUp') trigger(); });
+cvs.addEventListener('touchstart', e => { e.preventDefault(); trigger(); });
+autoBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     isAuto = !isAuto;
-    autoBtn.innerText = isAuto ? "OTOMATİK MOD: AÇIK" : "OTOMATİK MOD: KAPALI";
-    autoBtn.classList.toggle('active');
+    autoBtn.innerText = isAuto ? "OTOMATİK: AÇIK" : "OTOMATİK: KAPALI";
+    autoBtn.classList.toggle('on');
 });
 
-function createPipe() {
-    let topH = Math.random() * (canvas.height - gap - 100) + 50;
-    pipes.push({ x: canvas.width, top: topH, passed: false });
-}
-
 function reset() {
-    bird.y = 250; bird.velocity = 0; pipes = []; score = 0; gameRunning = true; loop();
+    bird.y = 290; bird.v = 0; pipes = []; score = 0; frame = 0;
+    gameState = 'PLAYING';
 }
 
 function update() {
-    if(!gameRunning) return;
+    if (gameState !== 'PLAYING') return;
 
-    bird.velocity += gravity;
-    bird.y += bird.velocity;
+    bird.v += gravity;
+    bird.y += bird.v;
 
-    // Otomatik Pilot Mantığı
+    // AI Mantığı (İyileştirilmiş)
     if (isAuto && pipes.length > 0) {
-        let nextPipe = pipes.find(p => p.x + 50 > bird.x);
-        if (nextPipe) {
-            let targetY = nextPipe.top + (gap / 2) + 20; // Boru ortasını hedefle
-            if (bird.y > targetY) bird.velocity = jump;
+        let p = pipes.find(p => p.x + 50 > bird.x - bird.r);
+        if (p) {
+            let target = p.top + (gap / 2) + 10;
+            if (bird.y > target && bird.v > 0.5) bird.v = jump;
         }
     }
 
-    if (frame % 100 === 0) createPipe();
+    if (frame % 90 === 0) {
+        let h = Math.random() * (cvs.height - gap - 120) + 60;
+        pipes.push({ x: cvs.width, top: h, passed: false });
+    }
 
-    for (let i = pipes.length - 1; i >= 0; i--) {
-        pipes[i].x -= pipeSpeed;
+    pipes.forEach((p, i) => {
+        p.x -= pipeSpeed;
+        if (!p.passed && p.x < bird.x) { score++; p.passed = true; }
+        if (p.x + 50 < 0) pipes.splice(i, 1);
 
         // Çarpışma
-        if (bird.x + bird.radius > pipes[i].x && bird.x - bird.radius < pipes[i].x + 50) {
-            if (bird.y - bird.radius < pipes[i].top || bird.y + bird.radius > pipes[i].top + gap) {
-                gameOver();
-            }
+        if (bird.x + bird.r > p.x && bird.x - bird.r < p.x + 50) {
+            if (bird.y - bird.r < p.top || bird.y + bird.r > p.top + gap) die();
         }
+    });
 
-        if (!pipes[i].passed && pipes[i].x < bird.x) {
-            score++;
-            pipes[i].passed = true;
-        }
-
-        if (pipes[i].x < -50) pipes.splice(i, 1);
-    }
-
-    if (bird.y + bird.radius > canvas.height || bird.y < 0) gameOver();
+    if (bird.y + bird.r > cvs.height || bird.y - bird.r < 0) die();
     frame++;
 }
 
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function die() {
+    gameState = 'OVER';
+    if (score > best) {
+        best = score;
+        localStorage.setItem('fb_best', best);
+        bestEl.innerText = best;
+    }
+}
 
-    // Kuş
-    ctx.fillStyle = "#f1c40f";
-    ctx.beginPath();
-    ctx.arc(bird.x, bird.y, bird.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "black";
-    ctx.stroke();
+function draw() {
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
 
     // Borular
     pipes.forEach(p => {
-        ctx.fillStyle = "#2ecc71";
+        let g = ctx.createLinearGradient(p.x, 0, p.x + 50, 0);
+        g.addColorStop(0, '#2ecc71'); g.addColorStop(1, '#27ae60');
+        ctx.fillStyle = g;
         ctx.fillRect(p.x, 0, 50, p.top);
-        ctx.fillRect(p.x, p.top + gap, 50, canvas.height);
-        ctx.strokeStyle = "#1b5e20";
-        ctx.strokeRect(p.x, 0, 50, p.top);
-        ctx.strokeRect(p.x, p.top + gap, 50, canvas.height);
+        ctx.fillRect(p.x, p.top + gap, 50, cvs.height);
     });
+
+    // Kuş
+    ctx.fillStyle = "#f1c40f";
+    ctx.beginPath(); ctx.arc(bird.x, bird.y, bird.r, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "white"; // Göz
+    ctx.beginPath(); ctx.arc(bird.x + 7, bird.y - 5, 5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "black"; // Göz bebeği
+    ctx.beginPath(); ctx.arc(bird.x + 9, bird.y - 5, 2, 0, Math.PI*2); ctx.fill();
 
     // Skor
     ctx.fillStyle = "white";
-    ctx.font = "bold 30px Arial";
+    ctx.font = "bold 40px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(score, canvas.width / 2, 80);
+    ctx.fillText(score, cvs.width/2, 100);
 
-    if (!gameRunning) {
-        ctx.fillStyle = "rgba(0,0,0,0.6)";
-        ctx.fillRect(0,0,canvas.width, canvas.height);
-        ctx.fillStyle = "white";
-        ctx.fillText("OYUN BİTTİ", canvas.width/2, canvas.height/2);
-        ctx.font = "18px Arial";
-        ctx.fillText("Devam etmek için ekrana dokun", canvas.width/2, canvas.height/2 + 40);
+    if (gameState === 'READY') {
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.fillRect(0,0,cvs.width, cvs.height);
+        ctx.fillStyle = "white"; ctx.font = "20px Arial";
+        ctx.fillText("BAŞLAMAK İÇİN DOKUN", cvs.width/2, cvs.height/2);
     }
-}
-
-function gameOver() {
-    gameRunning = false;
-    if (score > highScore) {
-        highScore = score;
-        localStorage.setItem('flappyHighScore', highScore);
-        highScoreEl.innerText = highScore;
+    
+    if (gameState === 'OVER') {
+        ctx.fillStyle = "rgba(231, 76, 60, 0.6)";
+        ctx.fillRect(0,0,cvs.width, cvs.height);
+        ctx.fillStyle = "white"; ctx.fillText("EYVAH! PATLADIK", cvs.width/2, cvs.height/2);
+        ctx.font = "16px Arial"; ctx.fillText("Tekrar denemek için dokun", cvs.width/2, cvs.height/2 + 40);
     }
+
+    requestAnimationFrame(draw);
 }
 
-function loop() {
-    update();
-    draw();
-    if(gameRunning) requestAnimationFrame(loop);
-}
-
-loop();
+setInterval(update, 1000/60);
+draw();
 </script>
 </body>
 </html>

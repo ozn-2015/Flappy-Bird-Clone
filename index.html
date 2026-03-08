@@ -2,106 +2,159 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Gemini Flappy Bird</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pro Flappy Bird - Auto Mode</title>
     <style>
-        body { margin: 0; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; background: #222; font-family: sans-serif; }
-        canvas { border: 4px solid #fff; background: #70c5ce; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        body { margin: 0; padding: 0; background: #222; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: manipulation; }
+        canvas { background: #4ec0ca; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 100%; max-height: 80vh; }
+        .controls { margin-top: 15px; display: flex; gap: 10px; }
+        button { padding: 12px 24px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; transition: 0.3s; font-weight: bold; }
+        .btn-auto { background: #e67e22; color: white; }
+        .btn-auto.active { background: #27ae60; box-shadow: 0 0 15px #2ecc71; }
+        .stats { color: white; margin-bottom: 10px; font-size: 18px; }
     </style>
 </head>
 <body>
 
-<canvas id="gameCanvas" width="400" height="600"></canvas>
+<div class="stats">En Yüksek Skor: <span id="highScore">0</span></div>
+<canvas id="gameCanvas" width="360" height="580"></canvas>
+
+<div class="controls">
+    <button id="autoBtn" class="btn-auto">OTOMATİK MOD: KAPALI</button>
+</div>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const highScoreEl = document.getElementById('highScore');
+const autoBtn = document.getElementById('autoBtn');
 
-// Oyun Değişkenleri
-let bird = { x: 50, y: 300, w: 30, h: 30, gravity: 0.6, lift: -10, velocity: 0 };
+// Ayarlar
+let gravity = 0.25;
+let jump = -4.5;
+let pipeSpeed = 2.5;
+let gap = 160;
+
+// Oyun Durumu
+let bird = { x: 50, y: 250, velocity: 0, radius: 15 };
 let pipes = [];
-let frame = 0;
 let score = 0;
-let gameActive = true;
+let highScore = localStorage.getItem('flappyHighScore') || 0;
+let isAuto = false;
+let gameRunning = true;
+let frame = 0;
 
-// Kontroller
-window.addEventListener('keydown', () => { if(gameActive) bird.velocity += bird.lift; else resetGame(); });
-window.addEventListener('touchstart', () => { if(gameActive) bird.velocity += bird.lift; else resetGame(); });
+highScoreEl.innerText = highScore;
+
+// Girdiler
+const doJump = () => { if(gameRunning && !isAuto) bird.velocity = jump; if(!gameRunning) reset(); };
+window.addEventListener('keydown', (e) => { if(e.code === 'Space') doJump(); });
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); doJump(); });
+
+autoBtn.addEventListener('click', () => {
+    isAuto = !isAuto;
+    autoBtn.innerText = isAuto ? "OTOMATİK MOD: AÇIK" : "OTOMATİK MOD: KAPALI";
+    autoBtn.classList.toggle('active');
+});
 
 function createPipe() {
-    let gap = 150;
-    let minHeight = 50;
-    let height = Math.floor(Math.random() * (canvas.height - gap - (2 * minHeight))) + minHeight;
-    pipes.push({ x: canvas.width, top: height, bottom: canvas.height - height - gap });
+    let topH = Math.random() * (canvas.height - gap - 100) + 50;
+    pipes.push({ x: canvas.width, top: topH, passed: false });
 }
 
-function resetGame() {
-    bird.y = 300; bird.velocity = 0; pipes = []; score = 0; frame = 0; gameActive = true; loop();
+function reset() {
+    bird.y = 250; bird.velocity = 0; pipes = []; score = 0; gameRunning = true; loop();
+}
+
+function update() {
+    if(!gameRunning) return;
+
+    bird.velocity += gravity;
+    bird.y += bird.velocity;
+
+    // Otomatik Pilot Mantığı
+    if (isAuto && pipes.length > 0) {
+        let nextPipe = pipes.find(p => p.x + 50 > bird.x);
+        if (nextPipe) {
+            let targetY = nextPipe.top + (gap / 2) + 20; // Boru ortasını hedefle
+            if (bird.y > targetY) bird.velocity = jump;
+        }
+    }
+
+    if (frame % 100 === 0) createPipe();
+
+    for (let i = pipes.length - 1; i >= 0; i--) {
+        pipes[i].x -= pipeSpeed;
+
+        // Çarpışma
+        if (bird.x + bird.radius > pipes[i].x && bird.x - bird.radius < pipes[i].x + 50) {
+            if (bird.y - bird.radius < pipes[i].top || bird.y + bird.radius > pipes[i].top + gap) {
+                gameOver();
+            }
+        }
+
+        if (!pipes[i].passed && pipes[i].x < bird.x) {
+            score++;
+            pipes[i].passed = true;
+        }
+
+        if (pipes[i].x < -50) pipes.splice(i, 1);
+    }
+
+    if (bird.y + bird.radius > canvas.height || bird.y < 0) gameOver();
+    frame++;
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Kuş
+    ctx.fillStyle = "#f1c40f";
+    ctx.beginPath();
+    ctx.arc(bird.x, bird.y, bird.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "black";
+    ctx.stroke();
+
+    // Borular
+    pipes.forEach(p => {
+        ctx.fillStyle = "#2ecc71";
+        ctx.fillRect(p.x, 0, 50, p.top);
+        ctx.fillRect(p.x, p.top + gap, 50, canvas.height);
+        ctx.strokeStyle = "#1b5e20";
+        ctx.strokeRect(p.x, 0, 50, p.top);
+        ctx.strokeRect(p.x, p.top + gap, 50, canvas.height);
+    });
+
+    // Skor
+    ctx.fillStyle = "white";
+    ctx.font = "bold 30px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(score, canvas.width / 2, 80);
+
+    if (!gameRunning) {
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0,0,canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.fillText("OYUN BİTTİ", canvas.width/2, canvas.height/2);
+        ctx.font = "18px Arial";
+        ctx.fillText("Devam etmek için ekrana dokun", canvas.width/2, canvas.height/2 + 40);
+    }
+}
+
+function gameOver() {
+    gameRunning = false;
+    if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('flappyHighScore', highScore);
+        highScoreEl.innerText = highScore;
+    }
 }
 
 function loop() {
-    if (!gameActive) return;
-
-    // Temizlik
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Arka Plan (Basit Gökyüzü)
-    ctx.fillStyle = "#70c5ce";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Kuş Hareket
-    bird.velocity += bird.gravity;
-    bird.y += bird.velocity;
-
-    // Kuş Çizimi
-    ctx.fillStyle = "#f4d03f";
-    ctx.fillRect(bird.x, bird.y, bird.w, bird.h);
-
-    // Boru Üretimi
-    if (frame % 90 === 0) createPipe();
-
-    // Boru Hareket ve Çizim
-    for (let i = pipes.length - 1; i >= 0; i--) {
-        pipes[i].x -= 3;
-
-        ctx.fillStyle = "#2ecc71";
-        // Üst Boru
-        ctx.fillRect(pipes[i].x, 0, 50, pipes[i].top);
-        // Alt Boru
-        ctx.fillRect(pipes[i].x, canvas.height - pipes[i].bottom, 50, pipes[i].bottom);
-
-        // Çarpışma Kontrolü
-        if (bird.x < pipes[i].x + 50 && bird.x + bird.w > pipes[i].x &&
-            (bird.y < pipes[i].top || bird.y + bird.h > canvas.height - pipes[i].bottom)) {
-            gameActive = false;
-        }
-
-        // Skor
-        if (pipes[i].x === 50) score++;
-
-        // Boru Silme
-        if (pipes[i].x + 50 < 0) pipes.splice(i, 1);
-    }
-
-    // Yer ve Tavan Kontrolü
-    if (bird.y + bird.h > canvas.height || bird.y < 0) gameActive = false;
-
-    // Skor Çizimi
-    ctx.fillStyle = "white";
-    ctx.font = "30px Arial";
-    ctx.fillText(`Skor: ${score}`, 20, 50);
-
-    if (!gameActive) {
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "white";
-        ctx.textAlign = "center";
-        ctx.fillText("OYUN BİTTİ", canvas.width/2, canvas.height/2);
-        ctx.font = "20px Arial";
-        ctx.fillText("Tekrar için bir tuşa bas", canvas.width/2, canvas.height/2 + 40);
-    }
-
-    frame++;
-    requestAnimationFrame(loop);
+    update();
+    draw();
+    if(gameRunning) requestAnimationFrame(loop);
 }
 
 loop();
